@@ -1,0 +1,15 @@
+{
+  "name": "gemcam-backend",
+  "version": "1.0.0",
+  "description": "Backend server for ESP32-CAM Gemini AI",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google/genai": "latest",
+    "express": "latest",
+    "multer": "latest"
+  }
+}
