@@ -1,6 +1,7 @@
-const express = require("express");
-const multer = require("multer");
-const { GoogleGenAI } = require("@google/genai");
+import express from 'express';
+import multer from 'multer';
+import { GoogleGenAI } from '@google/genai';
+
 
 const app = express();
 const port = process.env.PORT || 10000;
