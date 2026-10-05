@@ -1,237 +1,64 @@
-import express from 'express';
-import { GoogleGenAI } from '@google/genai';
-
+const express = require('express');
 const app = express();
-const port = process.env.PORT || 10000;
+const port = process.env.PORT || 3000;
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
-});
-
-// Accept raw JPEG binary directly from ESP32
-app.use(
-  express.raw({
-    type: 'image/jpeg',
-    limit: '500kb'
-  })
-);
-
-app.get("/", (req, res) => {
-  res.send("GEMCAM AI SERVER IS RUNNING");
-});
-
-async function askGeminiWithRetry(imageBase64, mimeType) {
-
-  const maxRetries = 4;
-
-  for (
-    let attempt = 1;
-    attempt <= maxRetries;
-    attempt++
-  ) {
-
-    try {
-
-      console.log(
-        `Gemini attempt ${attempt}/${maxRetries}`
-      );
-
-      const response =
-        await ai.models.generateContent({
-
-          model: "gemini-3.8-flash",
-
-          contents: [
-
-            {
-              inlineData: {
-                data: imageBase64,
-                mimeType:
-                  mimeType || "image/jpeg"
-              }
-            },
-
-            {
-              text:
-                "Look carefully at this image. " +
-                "If it contains a Plus One or Plus Two school question, " +
-                "solve it and give the answer clearly. " +
-                "Otherwise describe what is visible. " +
-                "Keep the answer short and suitable for a 128x64 OLED display."
-            }
-
-          ]
-
-        });
-
-      return (
-        response.text ||
-        "No answer from Gemini."
-      );
-
-    } catch (error) {
-
-      console.error(
-        `Gemini attempt ${attempt} failed:`
-      );
-
-      console.error(error);
-
-      const errorText =
-        String(error);
-
-      if (
-        errorText.includes("429") ||
-        errorText.includes("RESOURCE_EXHAUSTED") ||
-        errorText.includes("Quota exceeded")
-      ) {
-
-        throw new Error(
-          "Gemini API Quota Exceeded. Please try later."
-        );
-      }
-
-      if (
-        errorText.includes("503") ||
-        errorText.includes("UNAVAILABLE") ||
-        errorText.includes("high demand")
-      ) {
-
-        if (
-          attempt < maxRetries
-        ) {
-
-          const waitTime =
-            attempt * 5000;
-
-          console.log(
-            `Gemini temporarily unavailable. ` +
-            `Waiting ${waitTime / 1000} seconds...`
-          );
-
-          await new Promise(
-            resolve =>
-              setTimeout(
-                resolve,
-                waitTime
-              )
-          );
-
-          continue;
-        }
-      }
-
-      throw error;
-    }
-  }
-
-  throw new Error(
-    "Gemini request failed."
-  );
-}
+// --- ഇത് വളരെ പ്രധാനമാണ് (ESP32 അയക്കുന്ന Raw JPEG ഡാറ്റ റീഡ് ചെയ്യാൻ) ---
+app.use(express.raw({ type: 'image/jpeg', limit: '10mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // ======================================================
-// RAW JPEG ENDPOINT
+// /analyze ROUTE
 // ======================================================
 
-app.post(
-  "/analyze",
-  async (req, res) => {
+app.post('/analyze', async (req, res) => {
+  try {
+    // req.body എന്നത് ഇപ്പോൾ raw buffer ആയിരിക്കും (JPEG ഡാറ്റ)
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: "No image data received or invalid format" });
+    }
 
-    console.log(
-      "--------------------------------"
+    console.log("--------------------------------");
+    console.log("Received image size:", req.body.length, "bytes");
+
+    // ബഫറിനെ Base64 ആക്കി മാറ്റുന്നു
+    const imageBase64 = req.body.toString('base64');
+
+    console.log("Sending image to Gemini...");
+
+    const answer = await askGeminiWithRetry(
+      imageBase64,
+      "image/jpeg"
     );
 
-    console.log(
-      "New image received"
-    );
+    console.log("Gemini answer:");
+    console.log(answer);
+    console.log("--------------------------------");
 
-    try {
+    res.status(200).json({
+      result: answer
+    });
 
-      if (
-        !req.body ||
-        !Buffer.isBuffer(req.body) ||
-        req.body.length === 0
-      ) {
+  } catch (error) {
+    console.error("SERVER ERROR:");
+    console.error(error);
 
-        console.log(
-          "No image received"
-        );
+    const message = String(error.message || error);
 
-        return res.status(400).json({
-          error: "No image received"
-        });
-      }
-
-      console.log(
-        "Image size:",
-        req.body.length
-      );
-
-      console.log(
-        "Content-Type:",
-        req.headers["content-type"]
-      );
-
-      const imageBase64 =
-        req.body.toString("base64");
-
-      console.log(
-        "Sending image to Gemini..."
-      );
-
-      const answer =
-        await askGeminiWithRetry(
-          imageBase64,
-          "image/jpeg"
-        );
-
-      console.log(
-        "Gemini answer:"
-      );
-
-      console.log(answer);
-
-      console.log(
-        "--------------------------------"
-      );
-
-      res.status(200).json({
-        result: answer
-      });
-
-    } catch (error) {
-
-      console.error(
-        "SERVER ERROR:"
-      );
-
-      console.error(error);
-
-      const message =
-        String(
-          error.message || error
-        );
-
-      if (
-        message.includes(
-          "Quota Exceeded"
-        ) ||
-        message.includes("429")
-      ) {
-
-        return res.status(429).json({
-          error:
-            "Gemini API Quota Exceeded. Please try later."
-        });
-      }
-
-      res.status(500).json({
-        error: message
+    if (
+      message.includes("Quota Exceeded") ||
+      message.includes("429")
+    ) {
+      return res.status(429).json({
+        error: "Gemini API Quota Exceeded. Please try later."
       });
     }
+
+    res.status(500).json({
+      error: message
+    });
   }
-);
+});
 
 // ======================================================
 // START SERVER
@@ -241,30 +68,11 @@ app.listen(
   port,
   "0.0.0.0",
   () => {
-
-    console.log(
-      "--------------------------------"
-    );
-
-    console.log(
-      "GEMCAM AI SERVER"
-    );
-
-    console.log(
-      "Server running on port:",
-      port
-    );
-
-    console.log(
-      "POST /analyze ready"
-    );
-
-    console.log(
-      "RAW JPEG MODE"
-    );
-
-    console.log(
-      "--------------------------------"
-    );
+    console.log("--------------------------------");
+    console.log("GEMCAM AI SERVER");
+    console.log("Server running on port:", port);
+    console.log("POST /analyze ready");
+    console.log("RAW JPEG MODE WITH MIDDLEWARE");
+    console.log("--------------------------------");
   }
 );
