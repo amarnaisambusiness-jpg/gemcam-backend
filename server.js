@@ -36,7 +36,7 @@ async function askGeminiWithRetry(imageBase64, mimeType) {
       console.log(`Gemini attempt ${attempt}/${maxRetries}`);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-2.5-flash",
 
         contents: [
           {
