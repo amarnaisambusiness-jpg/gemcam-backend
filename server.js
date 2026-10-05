@@ -1,8 +1,8 @@
-const express = require('express');
+ import express from 'express';
 const app = express();
 const port = process.env.PORT || 3000;
 
-// --- ഇത് വളരെ പ്രധാനമാണ് (ESP32 അയക്കുന്ന Raw JPEG ഡാറ്റ റീഡ് ചെയ്യാൻ) ---
+// ESP32 അയക്കുന്ന Raw JPEG ഡാറ്റ സ്വീകരിക്കാൻ
 app.use(express.raw({ type: 'image/jpeg', limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
@@ -13,7 +13,6 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 app.post('/analyze', async (req, res) => {
   try {
-    // req.body എന്നത് ഇപ്പോൾ raw buffer ആയിരിക്കും (JPEG ഡാറ്റ)
     if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: "No image data received or invalid format" });
     }
@@ -21,7 +20,6 @@ app.post('/analyze', async (req, res) => {
     console.log("--------------------------------");
     console.log("Received image size:", req.body.length, "bytes");
 
-    // ബഫറിനെ Base64 ആക്കി മാറ്റുന്നു
     const imageBase64 = req.body.toString('base64');
 
     console.log("Sending image to Gemini...");
@@ -72,7 +70,7 @@ app.listen(
     console.log("GEMCAM AI SERVER");
     console.log("Server running on port:", port);
     console.log("POST /analyze ready");
-    console.log("RAW JPEG MODE WITH MIDDLEWARE");
+    console.log("RAW JPEG MODE (ES MODULE)");
     console.log("--------------------------------");
   }
 );
