@@ -12,7 +12,6 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
-// Use a lighter multimodal Flash model
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 // ======================================================
@@ -66,19 +65,48 @@ async function askGemini(imageBase64) {
 
             {
               text:
-                "Look carefully at this image. " +
-                "If there is a school question, read it carefully " +
-                "and give the correct answer. " +
-                "Otherwise identify the main object or things visible. " +
-                "Keep the answer short and simple because it will " +
-                "be displayed on a small OLED screen."
+                "You are the question-answering AI for GEMCAM. " +
+
+                "Carefully inspect the entire image first. " +
+
+                "If the image contains a school question, worksheet, " +
+                "textbook problem, exam question, mathematics problem, " +
+                "physics problem, chemistry problem, or any other academic " +
+                "question, ALWAYS treat it as a question-answering task. " +
+
+                "Read the question and all visible numbers, symbols and text " +
+                "carefully. " +
+
+                "Solve the problem yourself and give the correct answer. " +
+
+                "Do not identify random objects in the image when a " +
+                "question is present. " +
+
+                "For calculation questions, show the essential calculation " +
+                "briefly and then give the final answer. " +
+
+                "For theory questions, give the direct correct answer with " +
+                "a short explanation. " +
+
+                "If the image contains multiple questions, answer the most " +
+                "clearly visible main question first. " +
+
+                "If the image is not a question paper or academic problem, " +
+                "then briefly describe the main object or subject. " +
+
+                "Use simple language suitable for a school student. " +
+
+                "Keep the final response concise enough for an ESP32 OLED, " +
+                "but do not omit the actual answer."
             }
 
           ]
 
         });
 
-      console.log("Gemini response received.");
+      console.log(
+        "Gemini response received."
+      );
 
       return (
         response.text ||
@@ -98,9 +126,9 @@ async function askGemini(imageBase64) {
       const errorText =
         String(error);
 
-      // --------------------------------------------------
+      // ==================================================
       // 503 - MODEL TEMPORARILY UNAVAILABLE
-      // --------------------------------------------------
+      // ==================================================
 
       if (
         errorText.includes("503") ||
@@ -134,9 +162,9 @@ async function askGemini(imageBase64) {
         );
       }
 
-      // --------------------------------------------------
+      // ==================================================
       // 429 - QUOTA / RATE LIMIT
-      // --------------------------------------------------
+      // ==================================================
 
       if (
         errorText.includes("429") ||
@@ -149,9 +177,9 @@ async function askGemini(imageBase64) {
         );
       }
 
-      // --------------------------------------------------
+      // ==================================================
       // OTHER ERROR
-      // --------------------------------------------------
+      // ==================================================
 
       throw error;
     }
@@ -170,14 +198,19 @@ app.post(
   "/analyze",
   async (req, res) => {
 
-    console.log("--------------------------------");
-    console.log("NEW IMAGE RECEIVED");
+    console.log(
+      "--------------------------------"
+    );
+
+    console.log(
+      "NEW IMAGE RECEIVED"
+    );
 
     try {
 
-      // ------------------------------------------------
+      // ==================================================
       // CHECK IMAGE
-      // ------------------------------------------------
+      // ==================================================
 
       if (
         !req.body ||
@@ -194,9 +227,9 @@ app.post(
         });
       }
 
-      // ------------------------------------------------
+      // ==================================================
       // IMAGE INFO
-      // ------------------------------------------------
+      // ==================================================
 
       console.log(
         "Image size:",
@@ -209,9 +242,9 @@ app.post(
         req.headers["content-type"]
       );
 
-      // ------------------------------------------------
+      // ==================================================
       // BASE64
-      // ------------------------------------------------
+      // ==================================================
 
       const imageBase64 =
         req.body.toString("base64");
@@ -225,20 +258,21 @@ app.post(
         "Sending image to Gemini..."
       );
 
-      // ------------------------------------------------
+      // ==================================================
       // GEMINI
-      // ------------------------------------------------
+      // ==================================================
 
       const answer =
         await askGemini(
           imageBase64
         );
 
-      // ------------------------------------------------
+      // ==================================================
       // SUCCESS
-      // ------------------------------------------------
+      // ==================================================
 
       console.log();
+
       console.log(
         "===== GEMINI ANSWER ====="
       );
@@ -258,6 +292,7 @@ app.post(
     catch (error) {
 
       console.error();
+
       console.error(
         "===== SERVER ERROR ====="
       );
@@ -274,9 +309,9 @@ app.post(
           error
         );
 
-      // ------------------------------------------------
+      // ==================================================
       // QUOTA
-      // ------------------------------------------------
+      // ==================================================
 
       if (
         message.includes(
@@ -294,9 +329,9 @@ app.post(
         });
       }
 
-      // ------------------------------------------------
+      // ==================================================
       // MODEL BUSY
-      // ------------------------------------------------
+      // ==================================================
 
       if (
         message.includes(
@@ -314,9 +349,9 @@ app.post(
         });
       }
 
-      // ------------------------------------------------
+      // ==================================================
       // GENERAL ERROR
-      // ------------------------------------------------
+      // ==================================================
 
       return res.status(500).json({
 
@@ -336,23 +371,39 @@ app.listen(
   "0.0.0.0",
   () => {
 
-    console.log("--------------------------------");
-    console.log("GEMCAM AI SERVER");
+    console.log(
+      "--------------------------------"
+    );
+
+    console.log(
+      "GEMCAM AI SERVER"
+    );
+
     console.log(
       "Server running on port:",
       port
     );
+
     console.log(
       "POST /analyze ready"
     );
+
     console.log(
       "MODEL:",
       GEMINI_MODEL
     );
+
+    console.log(
+      "QUESTION ANSWERING MODE"
+    );
+
     console.log(
       "RAW JPEG MODE"
     );
-    console.log("--------------------------------");
+
+    console.log(
+      "--------------------------------"
+    );
 
   }
 );
