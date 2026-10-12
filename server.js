@@ -1,12 +1,9 @@
+
 import express from "express";
 import { GoogleGenAI } from "@google/genai";
 
 const app = express();
 const port = process.env.PORT || 10000;
-
-// ======================================================
-// GEMINI
-// ======================================================
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
@@ -14,396 +11,131 @@ const ai = new GoogleGenAI({
 
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
-// ======================================================
-// RAW JPEG
-// ======================================================
-
+// Receive raw JPEG images up to 2 MB.
 app.use(
   express.raw({
     type: "image/jpeg",
-    limit: "500kb"
+    limit: "2mb"
   })
 );
 
-// ======================================================
-// HOME
-// ======================================================
-
 app.get("/", (req, res) => {
-  res.send("GEMCAM AI SERVER IS RUNNING");
+  res.type("text/plain").send(
+    "GEMCAM AI CALCULATOR SERVER IS RUNNING"
+  );
 });
 
-// ======================================================
-// GEMINI REQUEST
-// ======================================================
+async function solveImage(imageBase64) {
+  const prompt = `
+You are GEMCAM AI, a careful school question solver.
 
-async function askGemini(imageBase64) {
+IMPORTANT INSTRUCTIONS:
+1. Inspect the entire image carefully.
+2. Determine whether it contains a mathematics problem,
+   school question, worksheet, textbook page or exam paper.
+3. Read all visible numbers, mathematical signs, units,
+   symbols and instructions before solving.
+4. If it contains a mathematics problem, identify the exact
+   problem and solve it step by step.
+5. Verify arithmetic and the final result before replying.
+6. For algebra, show the essential rearrangement and solution.
+7. For geometry, use the visible measurements and explain
+   the method briefly.
+8. For physics and chemistry, give the relevant formula,
+   substitution and final answer with units where applicable.
+9. If several questions appear, solve the clearest main
+   question first.
+10. Never merely say "this is a question paper". Actually
+    answer the visible question.
+11. Never invent unreadable numbers or symbols. If the
+    question cannot be read reliably, ask for a clearer photo.
+12. If no academic question is present, briefly describe
+    what is visible.
 
-  const maxRetries = 3;
+OUTPUT FORMAT:
+Question: [short transcription of the problem]
+Working: [short calculation or explanation]
+Answer: [final answer]
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+Use plain text only. Keep the response concise for a small
+OLED display. Do not omit the actual final answer.
+`;
 
-    try {
-
-      console.log(
-        `Gemini attempt ${attempt}/${maxRetries}`
-      );
-
-      const response =
-        await ai.models.generateContent({
-
-          model: GEMINI_MODEL,
-
-          contents: [
-
-            {
-              inlineData: {
-                data: imageBase64,
-                mimeType: "image/jpeg"
-              }
-            },
-
-            {
-              text:
-                "You are the question-answering AI for GEMCAM. " +
-
-                "Carefully inspect the entire image first. " +
-
-                "If the image contains a school question, worksheet, " +
-                "textbook problem, exam question, mathematics problem, " +
-                "physics problem, chemistry problem, or any other academic " +
-                "question, ALWAYS treat it as a question-answering task. " +
-
-                "Read the question and all visible numbers, symbols and text " +
-                "carefully. " +
-
-                "Solve the problem yourself and give the correct answer. " +
-
-                "Do not identify random objects in the image when a " +
-                "question is present. " +
-
-                "For calculation questions, show the essential calculation " +
-                "briefly and then give the final answer. " +
-
-                "For theory questions, give the direct correct answer with " +
-                "a short explanation. " +
-
-                "If the image contains multiple questions, answer the most " +
-                "clearly visible main question first. " +
-
-                "If the image is not a question paper or academic problem, " +
-                "then briefly describe the main object or subject. " +
-
-                "Use simple language suitable for a school student. " +
-
-                "Keep the final response concise enough for an ESP32 OLED, " +
-                "but do not omit the actual answer."
-            }
-
-          ]
-
-        });
-
-      console.log(
-        "Gemini response received."
-      );
-
-      return (
-        response.text ||
-        "No answer from Gemini."
-      );
-
-    }
-
-    catch (error) {
-
-      console.error(
-        `Gemini attempt ${attempt} failed`
-      );
-
-      console.error(error);
-
-      const errorText =
-        String(error);
-
-      // ==================================================
-      // 503 - MODEL TEMPORARILY UNAVAILABLE
-      // ==================================================
-
-      if (
-        errorText.includes("503") ||
-        errorText.includes("UNAVAILABLE") ||
-        errorText.includes("high demand")
-      ) {
-
-        if (attempt < maxRetries) {
-
-          const waitTime =
-            attempt * 5000;
-
-          console.log(
-            `Gemini temporarily busy. ` +
-            `Waiting ${waitTime / 1000} seconds...`
-          );
-
-          await new Promise(
-            resolve =>
-              setTimeout(
-                resolve,
-                waitTime
-              )
-          );
-
-          continue;
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [
+      {
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: imageBase64
         }
+      },
+      { text: prompt }
+    ]
+  });
 
-        throw new Error(
-          "Gemini model temporarily unavailable."
-        );
-      }
-
-      // ==================================================
-      // 429 - QUOTA / RATE LIMIT
-      // ==================================================
-
-      if (
-        errorText.includes("429") ||
-        errorText.includes("RESOURCE_EXHAUSTED") ||
-        errorText.includes("Quota exceeded")
-      ) {
-
-        throw new Error(
-          "Gemini API quota exceeded."
-        );
-      }
-
-      // ==================================================
-      // OTHER ERROR
-      // ==================================================
-
-      throw error;
-    }
-  }
-
-  throw new Error(
-    "Gemini request failed."
-  );
+  return response.text || "No answer generated.";
 }
 
-// ======================================================
-// ANALYZE IMAGE
-// ======================================================
+app.post("/analyze", async (req, res) => {
+  console.log("New image received");
 
-app.post(
-  "/analyze",
-  async (req, res) => {
-
-    console.log(
-      "--------------------------------"
-    );
-
-    console.log(
-      "NEW IMAGE RECEIVED"
-    );
-
-    try {
-
-      // ==================================================
-      // CHECK IMAGE
-      // ==================================================
-
-      if (
-        !req.body ||
-        !Buffer.isBuffer(req.body) ||
-        req.body.length === 0
-      ) {
-
-        console.log(
-          "No image received"
-        );
-
-        return res.status(400).json({
-          error: "No image received"
-        });
-      }
-
-      // ==================================================
-      // IMAGE INFO
-      // ==================================================
-
-      console.log(
-        "Image size:",
-        req.body.length,
-        "bytes"
-      );
-
-      console.log(
-        "Content-Type:",
-        req.headers["content-type"]
-      );
-
-      // ==================================================
-      // BASE64
-      // ==================================================
-
-      const imageBase64 =
-        req.body.toString("base64");
-
-      console.log(
-        "Base64 size:",
-        imageBase64.length
-      );
-
-      console.log(
-        "Sending image to Gemini..."
-      );
-
-      // ==================================================
-      // GEMINI
-      // ==================================================
-
-      const answer =
-        await askGemini(
-          imageBase64
-        );
-
-      // ==================================================
-      // SUCCESS
-      // ==================================================
-
-      console.log();
-
-      console.log(
-        "===== GEMINI ANSWER ====="
-      );
-
-      console.log(answer);
-
-      console.log(
-        "========================="
-      );
-
-      return res.status(200).json({
-        result: answer
-      });
-
-    }
-
-    catch (error) {
-
-      console.error();
-
-      console.error(
-        "===== SERVER ERROR ====="
-      );
-
-      console.error(error);
-
-      console.error(
-        "========================"
-      );
-
-      const message =
-        String(
-          error.message ||
-          error
-        );
-
-      // ==================================================
-      // QUOTA
-      // ==================================================
-
-      if (
-        message.includes(
-          "quota exceeded"
-        ) ||
-        message.includes("429")
-      ) {
-
-        return res.status(429).json({
-
-          error:
-            "Gemini API Quota Exceeded. " +
-            "Please try again later."
-
-        });
-      }
-
-      // ==================================================
-      // MODEL BUSY
-      // ==================================================
-
-      if (
-        message.includes(
-          "temporarily unavailable"
-        ) ||
-        message.includes("503")
-      ) {
-
-        return res.status(503).json({
-
-          error:
-            "Gemini model is temporarily busy. " +
-            "Please try again."
-
-        });
-      }
-
-      // ==================================================
-      // GENERAL ERROR
-      // ==================================================
-
-      return res.status(500).json({
-
-        error: message
-
+  try {
+    if (
+      !Buffer.isBuffer(req.body) ||
+      req.body.length === 0
+    ) {
+      return res.status(400).json({
+        error: "No JPEG image received"
       });
     }
+
+    console.log("Image size:", req.body.length, "bytes");
+
+    const imageBase64 = req.body.toString("base64");
+    const answer = await solveImage(imageBase64);
+
+    console.log("AI answer:", answer);
+
+    return res.status(200).json({
+      result: answer
+    });
+
+  } catch (error) {
+    console.error("AI request failed:", error);
+
+    const message = String(error.message || error);
+    const lower = message.toLowerCase();
+
+    if (
+      message.includes("429") ||
+      message.includes("RESOURCE_EXHAUSTED") ||
+      lower.includes("quota")
+    ) {
+      return res.status(429).json({
+        error: "AI quota exceeded. Try again later."
+      });
+    }
+
+    if (
+      message.includes("503") ||
+      message.includes("UNAVAILABLE") ||
+      lower.includes("high demand")
+    ) {
+      return res.status(503).json({
+        error: "AI is busy. Please try again."
+      });
+    }
+
+    return res.status(500).json({
+      error: "AI server error. Check Render logs."
+    });
   }
-);
+});
 
-// ======================================================
-// START SERVER
-// ======================================================
-
-app.listen(
-  port,
-  "0.0.0.0",
-  () => {
-
-    console.log(
-      "--------------------------------"
-    );
-
-    console.log(
-      "GEMCAM AI SERVER"
-    );
-
-    console.log(
-      "Server running on port:",
-      port
-    );
-
-    console.log(
-      "POST /analyze ready"
-    );
-
-    console.log(
-      "MODEL:",
-      GEMINI_MODEL
-    );
-
-    console.log(
-      "QUESTION ANSWERING MODE"
-    );
-
-    console.log(
-      "RAW JPEG MODE"
-    );
-
-    console.log(
-      "--------------------------------"
-    );
-
-  }
-);
+app.listen(port, "0.0.0.0", () => {
+  console.log("GEMCAM AI CALCULATOR SERVER");
+  console.log("Port:", port);
+  console.log("Model:", GEMINI_MODEL);
+  console.log("POST /analyze ready");
+});
